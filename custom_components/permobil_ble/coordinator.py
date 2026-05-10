@@ -140,11 +140,21 @@ class PermobilCoordinator(DataUpdateCoordinator[WheelchairInfo]):
             )
 
             if self.slot2.sec > 0:
-                _LOGGER.debug("Permobil %s: waiting %ds for ownership window", self.address, self.slot2.sec)
+                _LOGGER.info(
+                    "Permobil %s: ownership held by another client, waiting %ds",
+                    self.address,
+                    self.slot2.sec,
+                )
                 await asyncio.sleep(self.slot2.sec)
 
-            await client.start_notify(RX_UUID, self._on_rx)
+            # Match the MyPermobil app order: write TAKE first, then enable
+            # notifications. WheelchairSocket.AnonymousClass6 -> takeOwnership
+            # -> setCharacteristicNotification.
+            _LOGGER.debug("Permobil %s: writing #TAKE", self.address)
             await client.write_gatt_char(TX_UUID, CMD_TAKE_OWNERSHIP, response=True)
+            _LOGGER.debug("Permobil %s: subscribing RX", self.address)
+            await client.start_notify(RX_UUID, self._on_rx)
+            _LOGGER.info("Permobil %s: streaming telemetry", self.address)
 
             while client.is_connected and not self._stop.is_set():
                 await asyncio.sleep(1.0)
@@ -153,13 +163,16 @@ class PermobilCoordinator(DataUpdateCoordinator[WheelchairInfo]):
             await self._disconnect()
 
     def _on_rx(self, _sender: Any, data: bytearray) -> None:
+        _LOGGER.debug("Permobil %s: rx %d bytes: %s", self.address, len(data), bytes(data).hex())
         for frame in self._buffer.feed(bytes(data)):
             values = parse_vsc_frame(frame)
             if values is None:
-                _LOGGER.debug("Permobil %s: bad frame %r", self.address, frame)
+                _LOGGER.debug("Permobil %s: rejected frame %r", self.address, frame)
                 continue
+            _LOGGER.debug("Permobil %s: frame keys=%s", self.address, sorted(values.keys()))
             info = self._decoder.decode(values)
             if info is None:
+                _LOGGER.debug("Permobil %s: incomplete frame, missing required keys", self.address)
                 continue
             self.async_set_updated_data(info)
 

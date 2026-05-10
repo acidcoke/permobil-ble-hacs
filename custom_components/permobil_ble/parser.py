@@ -55,23 +55,31 @@ def parse_slot2(data: bytes) -> Slot2Data:
 
 
 class Hysteresis:
-    """Deadband filter — emit only when delta exceeds threshold."""
+    """Asymmetric band-tracking deadband, ported from MessageParser.HysteresFilter.
 
-    __slots__ = ("threshold", "_last")
+    Outputs the input value when it leaves the [min, max] band, then
+    re-centers the band on the new value. While inside the band, holds
+    the last emitted value. Initial band is [0, 0].
+    """
+
+    __slots__ = ("threshold", "_min", "_max", "_val")
 
     def __init__(self, threshold: float) -> None:
         self.threshold = threshold
-        self._last: float | None = None
+        self._min = 0.0
+        self._max = 0.0
+        self._val = 0.0
 
     def filter(self, value: float) -> float:
-        if self._last is None or abs(value - self._last) > self.threshold:
-            self._last = value
-        return self._last
-
-
-def _to_signed16(v: int) -> int:
-    v &= 0xFFFF
-    return v - 0x10000 if v & 0x8000 else v
+        if value < self._min:
+            self._val = value
+            self._min = value
+            self._max = value + self.threshold
+        elif value > self._max:
+            self._val = value
+            self._max = value
+            self._min = value - self.threshold
+        return self._val
 
 
 class FrameBuffer:
@@ -168,10 +176,12 @@ class TelemetryDecoder:
         chair_type = values[VSC_KEY_CHAIR_TYPE] & 0xFF
         tilt_scale = TILT_SCALE_ALT if chair_type in CHAIR_TYPES_ALT_TILT else TILT_SCALE_DEFAULT
 
-        tilt_raw = _to_signed16(values[VSC_KEY_TILT_ANGLE]) * tilt_scale
-        back_raw = _to_signed16(values[VSC_KEY_BACK_ANGLE]) * ANGLE_SCALE
-        leg_raw = _to_signed16(values[VSC_KEY_LEG_ANGLE]) * ANGLE_SCALE
-        lift_raw = float(_to_signed16(values[VSC_KEY_LIFT_HEIGHT]))
+        # MessageParser.extractAnglesFromValues treats values as unsigned ints
+        # (Integer.parseInt(hex) on Java side yields positive int).
+        tilt_raw = values[VSC_KEY_TILT_ANGLE] * tilt_scale
+        back_raw = values[VSC_KEY_BACK_ANGLE] * ANGLE_SCALE
+        leg_raw = values[VSC_KEY_LEG_ANGLE] * ANGLE_SCALE
+        lift_raw = float(values[VSC_KEY_LIFT_HEIGHT])
 
         tilt = self._h_tilt.filter(tilt_raw)
         recline = self._h_recline.filter(back_raw - tilt)
