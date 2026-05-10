@@ -26,9 +26,14 @@ from .const import (
     CMD_TAKE_OWNERSHIP,
     DOMAIN,
     RX_UUID,
+    SERVICE_UUID,
     TIMER_UUID,
     TX_UUID,
 )
+
+# Gen 2 (PowerPlatform) seat service — used only to detect mismatched chairs
+# and emit a helpful error.
+GEN2_SEAT_SERVICE = "6164616d-6261-636f-a4c4-4e9c678ad2a0"
 from .parser import (
     FrameBuffer,
     Slot2Data,
@@ -105,6 +110,37 @@ class PermobilCoordinator(DataUpdateCoordinator[WheelchairInfo]):
             except asyncio.TimeoutError:
                 pass
 
+    def _log_gatt_tree(self, client: BleakClient) -> None:
+        services = client.services
+        if not services:
+            _LOGGER.warning("Permobil %s: no services discovered", self.address)
+            return
+        for svc in services:
+            _LOGGER.info("Permobil %s: service %s", self.address, svc.uuid)
+            for char in svc.characteristics:
+                _LOGGER.info(
+                    "Permobil %s:   char %s handle=%s props=%s",
+                    self.address,
+                    char.uuid,
+                    char.handle,
+                    char.properties,
+                )
+
+    def _verify_gen1_service(self, client: BleakClient) -> None:
+        uuids = {s.uuid.lower() for s in client.services}
+        if SERVICE_UUID.lower() in uuids:
+            return
+        if GEN2_SEAT_SERVICE in uuids:
+            raise RuntimeError(
+                "This chair exposes the Gen 2 (PowerPlatform) seat service, not "
+                "the Gen 1 (ConnectMe) service. This integration currently only "
+                "supports Gen 1 chairs."
+            )
+        raise RuntimeError(
+            f"Service {SERVICE_UUID} not present on {self.address}. "
+            "This device is not a supported Permobil ConnectMe chair."
+        )
+
     async def _resolve_device(self) -> BLEDevice | None:
         return bluetooth.async_ble_device_from_address(self.hass, self.address, connectable=True)
 
@@ -119,13 +155,15 @@ class PermobilCoordinator(DataUpdateCoordinator[WheelchairInfo]):
             device,
             self.address,
             disconnected_callback=self._on_disconnected,
-            use_services_cache=True,
+            use_services_cache=False,
             max_attempts=3,
         )
         self._client = client
         self._connected_evt.set()
 
         try:
+            self._log_gatt_tree(client)
+            self._verify_gen1_service(client)
             timer_data = await client.read_gatt_char(TIMER_UUID)
             try:
                 self.slot2 = parse_slot2(bytes(timer_data))
