@@ -27,7 +27,6 @@ from .const import (
     DOMAIN,
     RX_UUID,
     SERVICE_UUID,
-    TIMER_UUID,
     TX_UUID,
 )
 
@@ -37,10 +36,8 @@ GEN2_SEAT_SERVICE = "6164616d-6261-636f-a4c4-4e9c678ad2a0"
 from .parser import (
     FrameBuffer,
     Slot2Data,
-    Slot2DataError,
     TelemetryDecoder,
     WheelchairInfo,
-    parse_slot2,
     parse_vsc_frame,
 )
 
@@ -164,26 +161,16 @@ class PermobilCoordinator(DataUpdateCoordinator[WheelchairInfo]):
         try:
             self._log_gatt_tree(client)
             self._verify_gen1_service(client)
-            timer_data = await client.read_gatt_char(TIMER_UUID)
-            try:
-                self.slot2 = parse_slot2(bytes(timer_data))
-            except Slot2DataError as err:
-                raise RuntimeError(f"slot2 parse failed: {err}") from err
-            _LOGGER.info(
-                "Permobil %s: serial=%s ownership_held=%s sec=%d",
-                self.address,
-                self.slot2.serial,
-                self.slot2.ownership_held,
-                self.slot2.sec,
-            )
 
-            if self.slot2.sec > 0:
-                _LOGGER.info(
-                    "Permobil %s: ownership held by another client, waiting %ds",
-                    self.address,
-                    self.slot2.sec,
-                )
-                await asyncio.sleep(self.slot2.sec)
+            # NB: we used to read the TIMER characteristic here for serial
+            # number + ownership window (matching the MyPermobil app), but
+            # several chair firmwares / BLE-proxy paths reject the read with
+            # ATT error 1 (Invalid Handle) and immediately drop the link,
+            # making the session unrecoverable. The handshake works fine
+            # without the read — we just don't know whether someone else
+            # holds ownership. If the write below fails repeatedly, the user
+            # should make sure the MyPermobil phone app isn't connected.
+            self.slot2 = None
 
             # Match the MyPermobil app order: write TAKE first, then enable
             # notifications. WheelchairSocket.AnonymousClass6 -> takeOwnership
