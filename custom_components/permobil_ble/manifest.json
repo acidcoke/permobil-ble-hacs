@@ -1,0 +1,15 @@
+{
+  "domain": "permobil_ble",
+  "name": "Permobil ConnectMe",
+  "version": "0.0.1",
+  "documentation": "https://github.com/acidcoke/permobil-ble-hacs",
+  "issue_tracker": "https://github.com/acidcoke/permobil-ble-hacs/issues",
+  "codeowners": ["@acidcoke"],
+  "iot_class": "local_push",
+  "config_flow": true,
+  "dependencies": ["bluetooth"],
+  "requirements": ["bleak>=0.21.0", "bleak-retry-connector>=3.4.0"],
+  "bluetooth": [
+    { "service_uuid": "18ca0001-3751-4081-b17c-59f8e09fc175" }
+  ]
+}

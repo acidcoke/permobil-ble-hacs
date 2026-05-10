@@ -1,0 +1,35 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "bluetooth_confirm": {
+        "description": "Set up {name}?"
+      },
+      "user": {
+        "data": {
+          "address": "Device"
+        }
+      }
+    },
+    "abort": {
+      "no_devices_found": "No Permobil ConnectMe chairs found nearby.",
+      "not_supported": "This device does not advertise the Permobil ConnectMe service.",
+      "already_configured": "Device is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "tilt_angle": { "name": "Tilt angle" },
+      "recline_angle": { "name": "Recline angle" },
+      "legrest_angle": { "name": "Legrest angle" },
+      "elevation": { "name": "Elevation" },
+      "battery_voltage_raw": { "name": "Battery voltage (raw)" },
+      "chair_type": { "name": "Chair type" }
+    },
+    "binary_sensor": {
+      "driving": { "name": "Driving" },
+      "actuator_active": { "name": "Actuator active" },
+      "seat_up": { "name": "Seat up" }
+    }
+  }
+}
