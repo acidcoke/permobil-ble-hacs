@@ -172,13 +172,43 @@ class PermobilCoordinator(DataUpdateCoordinator[WheelchairInfo]):
             # should make sure the MyPermobil phone app isn't connected.
             self.slot2 = None
 
+            # Resolve characteristics from discovered services so we don't
+            # depend on an internal UUID->handle lookup that may pick the
+            # declaration handle instead of the value handle.
+            services = client.services
+            tx_char = services.get_characteristic(TX_UUID)
+            rx_char = services.get_characteristic(RX_UUID)
+            if tx_char is None or rx_char is None:
+                raise RuntimeError(
+                    f"TX or RX characteristic missing on {self.address}: "
+                    f"tx={tx_char} rx={rx_char}"
+                )
+            _LOGGER.info(
+                "Permobil %s: tx_char handle=%s uuid=%s | rx_char handle=%s uuid=%s",
+                self.address,
+                tx_char.handle,
+                tx_char.uuid,
+                rx_char.handle,
+                rx_char.uuid,
+            )
+
+            # Try MTU exchange — some peripherals reject GATT ops on the
+            # default 23-byte MTU. Best-effort; ignore failures.
+            try:
+                exchange = getattr(client, "_acquire_mtu", None)
+                if exchange is None and hasattr(client, "exchange_mtu"):
+                    new_mtu = await client.exchange_mtu(247)
+                    _LOGGER.debug("Permobil %s: MTU=%s", self.address, new_mtu)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Permobil %s: MTU exchange skipped (%s)", self.address, err)
+
             # Match the MyPermobil app order: write TAKE first, then enable
             # notifications. WheelchairSocket.AnonymousClass6 -> takeOwnership
             # -> setCharacteristicNotification.
-            _LOGGER.debug("Permobil %s: writing #TAKE", self.address)
-            await client.write_gatt_char(TX_UUID, CMD_TAKE_OWNERSHIP, response=True)
-            _LOGGER.debug("Permobil %s: subscribing RX", self.address)
-            await client.start_notify(RX_UUID, self._on_rx)
+            _LOGGER.debug("Permobil %s: writing #TAKE to handle=%s", self.address, tx_char.handle)
+            await client.write_gatt_char(tx_char, CMD_TAKE_OWNERSHIP, response=True)
+            _LOGGER.debug("Permobil %s: subscribing RX handle=%s", self.address, rx_char.handle)
+            await client.start_notify(rx_char, self._on_rx)
             _LOGGER.info("Permobil %s: streaming telemetry", self.address)
 
             while client.is_connected and not self._stop.is_set():
