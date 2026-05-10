@@ -6,10 +6,20 @@
         "description": "Set up {name}?"
       },
       "user": {
+        "description": "Pick a Permobil chair, or choose 'Enter MAC manually...' if it isn't listed.",
         "data": {
           "address": "Device"
         }
+      },
+      "manual": {
+        "description": "Enter the chair's Bluetooth MAC (format AA:BB:CC:DD:EE:FF). Find it in the MyPermobil app or via a BLE scanner.",
+        "data": {
+          "address": "MAC address"
+        }
       }
+    },
+    "error": {
+      "invalid_mac": "Not a valid Bluetooth MAC address."
     },
     "abort": {
       "no_devices_found": "No Permobil ConnectMe chairs found nearby.",
